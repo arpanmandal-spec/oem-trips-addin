@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OEM Trip History</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ── Design tokens ──────────────────────────────────────────────────────── */
+    :root {
+      --blue:      #0078D3;
+      --navy:      #003057;
+      --sky:       #00A1DE;
+      --neutral:   #66788C;
+      --surface:   #EFF2F7;
+      --white:     #FFFFFF;
+      --border:    #DDE3EC;
+      --text:      #1A2636;
+      --muted:     #8A99AA;
+      --red:       #D94040;
+      --green:     #1E9E5E;
+
+      --font: 'Roboto', -apple-system, sans-serif;
+      --radius: 2px;           /* Japanese restraint — almost no rounding */
+      --transition: 150ms ease;
+    }
+
+    /* ── Reset & base ───────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      font-weight: 400;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--surface);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Proto banner ───────────────────────────────────────────────────────── */
+    .proto-banner {
+      background: var(--navy);
+      color: rgba(255,255,255,0.6);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 5px 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .proto-banner strong { color: var(--sky); font-weight: 500; }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    header {
+      background: var(--navy);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Geotab wordmark — SVG inline */
+    .logo-mark {
+      width: 24px;
+      height: 24px;
+      background: var(--blue);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-mark svg { width: 14px; height: 14px; fill: white; }
+
+    .header-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--white);
+      letter-spacing: 0.02em;
+    }
+
+    .header-divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255,255,255,0.15);
+    }
+
+    .header-db {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────────────────────── */
+    .toolbar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-shrink: 0;
+    }
+
+    .toolbar-field {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 16px 0 0;
+      margin-right: 16px;
+      border-right: 1px solid var(--border);
+      height: 100%;
+    }
+
+    .toolbar-field:last-of-type {
+      border-right: none;
+    }
+
+    .field-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    select, input[type="date"] {
+      border: none;
+      outline: none;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text);
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+      min-width: 150px;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2366788C'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0 center;
+      padding-right: 14px;
+      min-width: 170px;
+    }
+
+    .toolbar-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      border: none;
+      cursor: pointer;
+      border-radius: var(--radius);
+      transition: background var(--transition), opacity var(--transition);
+      padding: 0 18px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #btnSearch {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    #btnSearch:hover { background: #006abc; }
+
+    #btnExport {
+      background: transparent;
+      color: var(--neutral);
+      border: 1px solid var(--border);
+    }
+
+    #btnExport:hover { background: var(--surface); color: var(--text); }
+    #btnExport:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Main split ──────────────────────────────────────────────────────────── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left panel ──────────────────────────────────────────────────────────── */
+    .left-panel {
+      width: 46%;
+      min-width: 320px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--white);
+      overflow: hidden;
+    }
+
+    /* Stats strip */
+    .stats-strip {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .stat {
+      flex: 1;
+      padding: 12px 16px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 300;
+      color: var(--navy);
+      line-height: 1;
+    }
+
+    .stat-value span {
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* Status bar */
+    .status-bar {
+      padding: 7px 16px;
+      font-size: 11px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+      min-height: 30px;
+    }
+
+    .status-bar.error { color: var(--red); }
+
+    /* Trip table */
+    .table-scroll {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    thead th:hover { color: var(--navy); }
+    thead th.sorted-asc::after  { content: " ↑"; color: var(--blue); }
+    thead th.sorted-desc::after { content: " ↓"; color: var(--blue); }
+
+    tbody tr {
+      border-bottom: 1px solid var(--surface);
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+
+    tbody tr:hover { background: #F3F7FB; }
+
+    tbody tr.selected {
+      background: #EBF4FF !important;
+      border-left: 3px solid var(--blue);
+    }
+
+    tbody tr.selected td:first-child { padding-left: 9px; }
+
+    tbody td {
+      padding: 10px 12px;
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    .device-name {
+      font-weight: 500;
+      color: var(--navy);
+      max-width: 130px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time-cell { color: var(--text); }
+    .meta-cell { color: var(--neutral); }
+
+    .view-hint {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--blue);
+      text-transform: uppercase;
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+
+    tbody tr:hover .view-hint,
+    tbody tr.selected .view-hint { opacity: 1; }
+
+    .empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .empty-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      opacity: 0.4;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 1.5px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Right panel ─────────────────────────────────────────────────────────── */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    /* Trip info ribbon */
+    .trip-ribbon {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      min-height: 48px;
+    }
+
+    .ribbon-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .ribbon-value {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--navy);
+    }
+
+    .ribbon-empty {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* Leaflet map */
+    #map {
+      flex: 1;
+      z-index: 0;
+    }
+
+    .map-placeholder {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--muted);
+    }
+
+    .map-placeholder-icon { font-size: 36px; opacity: 0.3; }
+    .map-placeholder-text { font-size: 12px; letter-spacing: 0.04em; }
+
+    /* Map legend */
+    .map-legend {
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      color: var(--neutral);
+      flex-shrink: 0;
+      letter-spacing: 0.02em;
+    }
+
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+
+    .legend-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .legend-line {
+      width: 18px; height: 2px; border-radius: 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Waypoint tooltip (Leaflet custom) ────────────────────────────────────── */
+    .wp-tooltip {
+      background: var(--navy);
+      color: var(--white);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-family: var(--font);
+      font-size: 11px;
+      min-width: 160px;
+      box-shadow: 0 4px 20px rgba(0,48,87,0.25);
+      pointer-events: none;
+      border: none;
+    }
+
+    .wp-tooltip::before { display: none; }
+
+    .wp-tooltip-header {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--sky);
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .wp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2px 0;
+      gap: 12px;
+    }
+
+    .wp-key {
+      color: rgba(255,255,255,0.55);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .wp-val {
+      font-weight: 500;
+      font-size: 11px;
+      color: var(--white);
+      text-align: right;
+    }
+
+    .wp-val.highlight { color: var(--sky); }
+
+    /* Override Leaflet tooltip defaults */
+    .leaflet-tooltip.wp-tooltip {
+      background: var(--navy) !important;
+      border: none !important;
+      box-shadow: 0 4px 20px rgba(0,48,87,0.3) !important;
+      border-radius: var(--radius) !important;
+      padding: 10px 14px !important;
+    }
+
+    .leaflet-tooltip-left.wp-tooltip::before,
+    .leaflet-tooltip-right.wp-tooltip::before,
+    .leaflet-tooltip-top.wp-tooltip::before,
+    .leaflet-tooltip-bottom.wp-tooltip::before {
+      border-color: transparent !important;
+    }
+  </style>
+</head>
+<body>
+
+<div class="proto-banner">
+  <strong>PROTOTYPE</strong> &nbsp;·&nbsp; Mock telemetry data &nbsp;·&nbsp; oem_eu database
+</div>
+
+<header>
+  <div class="header-left">
+    <div class="header-logo">
+      <div class="logo-mark">
+        <!-- Simple G mark -->
+        <svg viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+          <path d="M7 1a6 6 0 1 0 6 6H7V7h5.94A5.5 5.5 0 1 1 7 1.5V1z" fill="white"/>
+        </svg>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-title">Trip History</div>
+    <div class="header-divider"></div>
+    <div class="header-db">oem_eu</div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar-field">
+    <div class="field-label">Vehicle</div>
+    <select id="deviceSelect"></select>
+  </div>
+  <div class="toolbar-field">
+    <div class="field-label">From</div>
+    <input type="date" id="dateFrom" />
+  </div>
+  <div class="toolbar-field">
+    <div class="field-label">To</div>
+    <input type="date" id="dateTo" />
+  </div>
+  <div class="toolbar-actions">
+    <button id="btnExport" disabled>↓ Export CSV</button>
+    <button id="btnSearch">Search</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- LEFT: list -->
+  <div class="left-panel">
+
+    <div class="stats-strip" id="statsStrip" style="display:none">
+      <div class="stat">
+        <div class="stat-label">Trips</div>
+        <div class="stat-value" id="statTrips">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Distance</div>
+        <div class="stat-value" id="statDist">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Drive Time</div>
+        <div class="stat-value" id="statTime">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Avg Speed</div>
+        <div class="stat-value" id="statAvg">—</div>
+      </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">Loading vehicles…</div>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-col="idx">#</th>
+            <th data-col="vehicle">Vehicle</th>
+            <th data-col="start">Start</th>
+            <th data-col="duration">Duration</th>
+            <th data-col="distance">km</th>
+            <th data-col="driver">Driver</th>
+            <th data-col="maxSpeed">Max km/h</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tripBody">
+          <tr>
+            <td colspan="8">
+              <div class="empty">
+                <div class="empty-icon">○</div>
+                Select a vehicle and date range,<br>then click Search.
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: map -->
+  <div class="right-panel">
+
+    <div class="trip-ribbon" id="tripRibbon">
+      <div class="ribbon-empty">Select a trip to view its route →</div>
+    </div>
+
+    <div id="mapPlaceholder" class="map-placeholder">
+      <div class="map-placeholder-icon">◎</div>
+      <div class="map-placeholder-text">Trip route will appear here</div>
+    </div>
+
+    <div id="map" style="display:none"></div>
+
+    <div class="map-legend" id="mapLegend" style="display:none">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--green)"></div> Start
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--red)"></div> Stop
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background:var(--blue)"></div> Route
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--sky);width:7px;height:7px;border:1.5px solid var(--blue)"></div> Hover for telemetry
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Geotab-style compass headings ──────────────────────────────────────────────
+const COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+function bearingLabel(deg) { return COMPASS[Math.round(deg / 22.5) % 16]; }
+
+function bearingBetween(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const la1  = lat1 * Math.PI / 180;
+  const la2  = lat2 * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+// ── Mock data ──────────────────────────────────────────────────────────────────
+const MOCK_DEVICES = [
+  { id: "b1", name: "OEM-001 · BMW iX" },
+  { id: "b2", name: "OEM-002 · Renault Zoe" },
+  { id: "b3", name: "OEM-003 · Peugeot e-208" },
+  { id: "b4", name: "OEM-004 · Volvo XC40 EV" },
+  { id: "b5", name: "OEM-005 · VW ID.4" },
+];
+
+const MOCK_DRIVERS = ["M. Dupont", "J. Kowalski", "S. Eriksson", "L. Rossi", ""];
+
+const EU_ANCHORS = [
+  [48.8566, 2.3522],[52.5200, 13.4050],[51.5074, -0.1278],
+  [41.9028, 12.4964],[52.3676, 4.9041],[48.2082, 16.3738],
+  [50.8503, 4.3517],[53.5511, 9.9937],[45.4642, 9.1900],[47.3769, 8.5417],
+];
+
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function rndInt(a, b) { return Math.floor(rnd(a, b + 1)); }
+function pick(arr) { return arr[rndInt(0, arr.length - 1)]; }
+
+function generatePath(sLL, eLL, n) {
+  const pts = [sLL];
+  const mLat = (sLL[0] + eLL[0]) / 2 + rnd(-0.08, 0.08);
+  const mLon = (sLL[1] + eLL[1]) / 2 + rnd(-0.08, 0.08);
+  for (let i = 1; i < n - 1; i++) {
+    const t = i / (n - 1);
+    const lat = (1-t)*(1-t)*sLL[0] + 2*(1-t)*t*mLat + t*t*eLL[0];
+    const lon = (1-t)*(1-t)*sLL[1] + 2*(1-t)*t*mLon + t*t*eLL[1];
+    pts.push([lat + rnd(-0.004, 0.004), lon + rnd(-0.004, 0.004)]);
+  }
+  pts.push(eLL);
+  return pts;
+}
+
+// Build telemetry per waypoint
+function buildWaypoints(path, totalDistM, durationMs) {
+  let cumDist = 0;
+  const avgSpeedKmh = (totalDistM / 1000) / (durationMs / 3600000);
+
+  return path.map(function(pt, i) {
+    if (i > 0) {
+      const prev = path[i - 1];
+      const dlat = (pt[0] - prev[0]) * 111000;
+      const dlon = (pt[1] - prev[1]) * 111000 * Math.cos(pt[0] * Math.PI / 180);
+      cumDist += Math.sqrt(dlat*dlat + dlon*dlon);
+    }
+
+    // Speed: ramp up from start, ramp down near end
+    const progress = i / (path.length - 1);
+    const rampFactor = Math.sin(progress * Math.PI);
+    const speed = avgSpeedKmh * (0.5 + rampFactor * 0.8) * rnd(0.85, 1.15);
+
+    // Heading from previous point
+    let heading = 0;
+    if (i > 0) {
+      heading = bearingBetween(path[i-1][0], path[i-1][1], pt[0], pt[1]);
+    } else if (path.length > 1) {
+      heading = bearingBetween(pt[0], pt[1], path[1][0], path[1][1]);
+    }
+
+    // Acceleration: positive when speeding up, negative slowing down, near 0 in cruise
+    const accel = i === 0 ? rnd(0.5, 1.8)
+                : i === path.length - 1 ? rnd(-2.0, -0.5)
+                : rnd(-0.8, 0.8);
+
+    // Fuel level: drains over trip
+    const fuel = Math.max(10, rnd(85, 95) - progress * rnd(8, 18));
+
+    return {
+      latlng:    pt,
+      speed:     Math.max(0, speed),
+      heading:   heading,
+      accel:     accel,
+      fuel:      fuel,
+      cumDistKm: cumDist / 1000,
+    };
+  });
+}
+
+function generateTrips(deviceId, fromDate, toDate) {
+  const devices = deviceId === "all" ? MOCK_DEVICES : MOCK_DEVICES.filter(d => d.id === deviceId);
+  const trips = [];
+  const from = new Date(fromDate);
+  const to   = new Date(toDate);
+  to.setHours(23, 59, 59, 999);
+
+  devices.forEach(function(dev) {
+    let cursor = new Date(from);
+    const count = rndInt(3, 7);
+    for (let i = 0; i < count; i++) {
+      const startMs = cursor.getTime() + rnd(0.5, 3) * 3600000;
+      if (startMs > to.getTime()) break;
+      const anchor1 = pick(EU_ANCHORS);
+      const anchor2 = pick(EU_ANCHORS.filter(a => a !== anchor1));
+      const sLL = [anchor1[0] + rnd(-0.4, 0.4), anchor1[1] + rnd(-0.4, 0.4)];
+      const eLL = [anchor2[0] + rnd(-0.4, 0.4), anchor2[1] + rnd(-0.4, 0.4)];
+      const durationMs = rnd(10, 110) * 60000;
+      const stopMs = Math.min(startMs + durationMs, to.getTime());
+      const distM  = rnd(4000, 95000);
+      const path   = generatePath(sLL, eLL, rndInt(14, 28));
+      const waypoints = buildWaypoints(path, distM, stopMs - startMs);
+
+      trips.push({
+        id: dev.id + "_" + i,
+        device:       dev,
+        start:        new Date(startMs).toISOString(),
+        stop:         new Date(stopMs).toISOString(),
+        distance:     distM,
+        maximumSpeed: rnd(80, 145) / 3.6,
+        driver:       { name: pick(MOCK_DRIVERS) },
+        startLocation:{ y: sLL[0], x: sLL[1] },
+        stopLocation: { y: eLL[0], x: eLL[1] },
+        path:         path,
+        waypoints:    waypoints,
+      });
+      cursor = new Date(stopMs + rnd(0.5, 2) * 3600000);
+    }
+  });
+  return trips.sort((a, b) => new Date(b.start) - new Date(a.start));
+}
+
+// ── DOM ────────────────────────────────────────────────────────────────────────
+const deviceSelect  = document.getElementById("deviceSelect");
+const dateFrom      = document.getElementById("dateFrom");
+const dateTo        = document.getElementById("dateTo");
+const btnSearch     = document.getElementById("btnSearch");
+const btnExport     = document.getElementById("btnExport");
+const tripBody      = document.getElementById("tripBody");
+const statusBar     = document.getElementById("statusBar");
+const statsStrip    = document.getElementById("statsStrip");
+const statTrips     = document.getElementById("statTrips");
+const statDist      = document.getElementById("statDist");
+const statTime      = document.getElementById("statTime");
+const statAvg       = document.getElementById("statAvg");
+const tripRibbon    = document.getElementById("tripRibbon");
+const mapEl         = document.getElementById("map");
+const mapPlaceholder= document.getElementById("mapPlaceholder");
+const mapLegend     = document.getElementById("mapLegend");
+
+let currentTrips = [];
+let selectedId   = null;
+let sortCol = "start", sortDir = "desc";
+let leafletMap = null, mapLayers = [];
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+(function init() {
+  const to   = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 7);
+  dateTo.value   = to.toISOString().slice(0, 10);
+  dateFrom.value = from.toISOString().slice(0, 10);
+
+  const allOpt = document.createElement("option");
+  allOpt.value = "all";
+  allOpt.textContent = "All vehicles (" + MOCK_DEVICES.length + ")";
+  deviceSelect.appendChild(allOpt);
+
+  MOCK_DEVICES.forEach(function(d) {
+    const o = document.createElement("option");
+    o.value = d.id; o.textContent = d.name;
+    deviceSelect.appendChild(o);
+  });
+
+  statusBar.textContent = MOCK_DEVICES.length + " vehicles loaded — select range and click Search";
+
+  document.querySelectorAll("thead th[data-col]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      const col = th.dataset.col;
+      sortDir = (sortCol === col && sortDir === "asc") ? "desc" : "asc";
+      if (sortCol !== col) { sortDir = (col === "start") ? "desc" : "asc"; }
+      sortCol = col;
+      renderTrips(currentTrips);
+    });
+  });
+})();
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function fmtDT(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+  });
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return "—";
+  const h = Math.floor(ms / 3600000);
+  const m = Math.round((ms % 3600000) / 60000);
+  return h > 0 ? h + "h " + m + "m" : m + "m";
+}
+
+function durMs(t) { return new Date(t.stop) - new Date(t.start); }
+function esc(s)   { return s ? String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : ""; }
+function csvQ(v)  { return v ? '"' + String(v).replace(/"/g,'""') + '"' : ""; }
+
+// ── Search ─────────────────────────────────────────────────────────────────────
+btnSearch.addEventListener("click", function() {
+  if (!dateFrom.value || !dateTo.value) {
+    statusBar.className = "status-bar error";
+    statusBar.textContent = "Please select both From and To dates.";
+    return;
+  }
+  statusBar.className = "status-bar";
+  statusBar.innerHTML = '<span class="spinner"></span>Fetching trips…';
+  tripBody.innerHTML  = '<tr><td colspan="8"><div class="empty"><span class="spinner"></span></div></td></tr>';
+  statsStrip.style.display = "none";
+  btnExport.disabled = true;
+  selectedId = null;
+  clearMap();
+  resetRibbon();
+
+  setTimeout(function() {
+    currentTrips = generateTrips(deviceSelect.value, dateFrom.value, dateTo.value);
+    renderTrips(currentTrips);
+    const n = currentTrips.length;
+    statusBar.textContent = n + " trip" + (n !== 1 ? "s" : "") + " found — click a row to view on map";
+    btnExport.disabled = n === 0;
+  }, 450);
+});
+
+// ── Render table ───────────────────────────────────────────────────────────────
+function sorted(trips) {
+  return trips.slice().sort(function(a, b) {
+    let va, vb;
+    switch (sortCol) {
+      case "vehicle":  va = a.device.name;     vb = b.device.name;     break;
+      case "start":    va = a.start;           vb = b.start;           break;
+      case "duration": va = durMs(a);          vb = durMs(b);          break;
+      case "distance": va = a.distance;        vb = b.distance;        break;
+      case "driver":   va = a.driver.name||""; vb = b.driver.name||""; break;
+      case "maxSpeed": va = a.maximumSpeed;    vb = b.maximumSpeed;    break;
+      default: return 0;
+    }
+    return (va < vb ? -1 : va > vb ? 1 : 0) * (sortDir === "asc" ? 1 : -1);
+  });
+}
+
+function renderTrips(trips) {
+  if (!trips.length) {
+    tripBody.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">○</div>No trips for this selection.</div></td></tr>';
+    statsStrip.style.display = "none";
+    return;
+  }
+
+  const totalDist = trips.reduce((s, t) => s + t.distance, 0);
+  const totalMs   = trips.reduce((s, t) => s + durMs(t), 0);
+  const avgSpd    = totalMs > 0 ? Math.round((totalDist/1000) / (totalMs/3600000)) : 0;
+
+  statTrips.innerHTML = trips.length;
+  statDist.innerHTML  = (totalDist/1000).toFixed(0) + '<span>km</span>';
+  statTime.innerHTML  = (totalMs/3600000).toFixed(1) + '<span>h</span>';
+  statAvg.innerHTML   = avgSpd + '<span>km/h</span>';
+  statsStrip.style.display = "flex";
+
+  document.querySelectorAll("thead th[data-col]").forEach(function(th) {
+    th.classList.remove("sorted-asc","sorted-desc");
+    if (th.dataset.col === sortCol) th.classList.add("sorted-" + sortDir);
+  });
+
+  const rows = sorted(trips).map(function(trip, i) {
+    const sel = trip.id === selectedId ? " selected" : "";
+    const distKm = (trip.distance/1000).toFixed(1);
+    const maxSpd = Math.round(trip.maximumSpeed * 3.6);
+    const driver = esc(trip.driver.name) || '<span style="color:var(--muted)">—</span>';
+
+    return '<tr class="trip-row' + sel + '" data-id="' + trip.id + '">' +
+      '<td class="meta-cell">' + (i+1) + '</td>' +
+      '<td class="device-name">' + esc(trip.device.name) + '</td>' +
+      '<td class="time-cell">' + fmtDT(trip.start) + '</td>' +
+      '<td class="meta-cell">' + fmtDuration(durMs(trip)) + '</td>' +
+      '<td class="meta-cell">' + distKm + '</td>' +
+      '<td class="meta-cell">' + driver + '</td>' +
+      '<td class="meta-cell">' + maxSpd + '</td>' +
+      '<td><span class="view-hint">Map →</span></td>' +
+    '</tr>';
+  }).join("");
+
+  tripBody.innerHTML = rows;
+
+  document.querySelectorAll(".trip-row").forEach(function(row) {
+    row.addEventListener("click", function() {
+      const trip = currentTrips.find(t => t.id === row.dataset.id);
+      if (!trip) return;
+      selectedId = trip.id;
+      document.querySelectorAll(".trip-row").forEach(r => r.classList.remove("selected"));
+      row.classList.add("selected");
+      showTrip(trip);
+    });
+  });
+}
+
+// ── Map ────────────────────────────────────────────────────────────────────────
+function clearMap() {
+  mapLayers.forEach(function(l) { if (leafletMap) leafletMap.removeLayer(l); });
+  mapLayers = [];
+}
+
+function resetRibbon() {
+  tripRibbon.innerHTML = '<div class="ribbon-empty">Select a trip to view its route →</div>';
+}
+
+function showTrip(trip) {
+  // Ribbon
+  tripRibbon.innerHTML = [
+    ribbonItem("Vehicle",  trip.device.name),
+    ribbonItem("Start",    fmtDT(trip.start)),
+    ribbonItem("Stop",     fmtDT(trip.stop)),
+    ribbonItem("Distance", (trip.distance/1000).toFixed(1) + " km"),
+    ribbonItem("Duration", fmtDuration(durMs(trip))),
+    ribbonItem("Driver",   trip.driver.name || "—"),
+  ].join("");
+
+  // Show map
+  mapPlaceholder.style.display = "none";
+  mapEl.style.display = "block";
+  mapLegend.style.display = "flex";
+
+  if (!leafletMap) {
+    leafletMap = L.map("map");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(leafletMap);
+  }
+
+  clearMap();
+
+  const wps  = trip.waypoints;
+  const path = wps.map(w => w.latlng);
+
+  // Route line
+  const polyline = L.polyline(path, {
+    color: "#0078D3", weight: 3, opacity: 0.9
+  }).addTo(leafletMap);
+  mapLayers.push(polyline);
+
+  // Breadcrumb waypoints (every dot along the route)
+  wps.forEach(function(wp, i) {
+    const isStart = i === 0;
+    const isEnd   = i === wps.length - 1;
+
+    const dotColor  = isStart ? "#1E9E5E" : isEnd ? "#D94040" : "#00A1DE";
+    const dotRadius = isStart || isEnd ? 7 : 4;
+    const dotWeight = isStart || isEnd ? 2 : 1;
+
+    // Tooltip HTML
+    const accelSign = wp.accel >= 0 ? "+" : "";
+    const accelColor = wp.accel > 0.3 ? "#4ade80"
+                     : wp.accel < -0.3 ? "#f87171"
+                     : "rgba(255,255,255,0.7)";
+
+    const tooltipHTML =
+      '<div class="wp-tooltip-header">' +
+        (isStart ? "Trip Start" : isEnd ? "Trip End" : "Waypoint " + (i+1) + " / " + wps.length) +
+      '</div>' +
+      wpRow("Speed",        Math.round(wp.speed) + " km/h", wp.speed > 100) +
+      wpRow("Heading",      bearingLabel(wp.heading) + "  " + Math.round(wp.heading) + "°", false) +
+      wpRow("Acceleration", accelSign + wp.accel.toFixed(2) + " m/s²", false, accelColor) +
+      wpRow("Fuel Level",   wp.fuel.toFixed(1) + "%", false) +
+      wpRow("Trip Dist.",   wp.cumDistKm.toFixed(2) + " km", false);
+
+    const circle = L.circleMarker(wp.latlng, {
+      radius:      dotRadius,
+      color:       dotColor,
+      fillColor:   dotColor,
+      fillOpacity: isStart || isEnd ? 1 : 0.75,
+      weight:      dotWeight,
+    });
+
+    circle.bindTooltip(tooltipHTML, {
+      className:   "wp-tooltip",
+      direction:   "top",
+      offset:      [0, -8],
+      permanent:   false,
+      sticky:      false,
+      opacity:     1,
+    });
+
+    circle.addTo(leafletMap);
+    mapLayers.push(circle);
+  });
+
+  leafletMap.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+}
+
+function ribbonItem(label, value) {
+  return '<div><div class="ribbon-label">' + label + '</div>' +
+         '<div class="ribbon-value">' + esc(String(value)) + '</div></div>';
+}
+
+function wpRow(key, val, highlight, valColor) {
+  const style = valColor ? ' style="color:' + valColor + '"' : (highlight ? ' class="wp-val highlight"' : ' class="wp-val"');
+  return '<div class="wp-row"><span class="wp-key">' + key + '</span>' +
+         '<span' + (valColor ? ' style="color:' + valColor + ';font-weight:500;font-size:11px"' : (highlight ? ' class="wp-val highlight"' : ' class="wp-val"')) + '>' + val + '</span></div>';
+}
+
+// ── Export CSV ─────────────────────────────────────────────────────────────────
+btnExport.addEventListener("click", function() {
+  if (!currentTrips.length) return;
+  const hdr = ["#","Vehicle","Start","Stop","Duration (min)","Distance (km)","Driver","Max Speed (km/h)"];
+  const rows = sorted(currentTrips).map(function(t, i) {
+    return [i+1, csvQ(t.device.name), t.start, t.stop,
+      Math.round(durMs(t)/60000), (t.distance/1000).toFixed(1),
+      csvQ(t.driver.name), Math.round(t.maximumSpeed*3.6)].join(",");
+  });
+  const csv  = [hdr.join(","), ...rows].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "oem_trips.csv";
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
