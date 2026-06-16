@@ -12,7 +12,7 @@
         "en": "OEM Trip History"
       },
       "icon": "https://www.geotab.com/geoimages/home/geotab-logo.png",
-      "url": "addinFileName.html",
+      "url": "https://arpanmandal-spec.github.io/oem-trips-addin/index.html",
       "path": "ActivityLink/",
       "menuId": "OEMTripHistory"
     }
