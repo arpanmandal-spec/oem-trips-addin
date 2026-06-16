@@ -1,0 +1,21 @@
+{
+  "name": "OEM Trip History",
+  "supportEmail": "arpan.mandal@geotab.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "page": "map",
+      "title": {
+        "en": "OEM Trip History"
+      },
+      "menuName": {
+        "en": "OEM Trip History"
+      },
+      "icon": "https://www.geotab.com/geoimages/home/geotab-logo.png",
+      "url": "addinFileName.html",
+      "path": "ActivityLink/",
+      "menuId": "OEMTripHistory"
+    }
+  ],
+  "isSigned": false
+}
